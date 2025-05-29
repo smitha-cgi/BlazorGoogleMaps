@@ -100,8 +100,6 @@ public partial class MapCircleListPage : ComponentBase
 
     private async void CreateBunchOfCircles()
     {
-        List<AdvancedMarkerElementOptions> circles = [];
-
         int howMany = _bunchsize;
         var bounds = await _map.InteropObject.GetBounds();
         double maxRadius = (bounds.North - bounds.South) * 111111.0 / (10 + Math.Sqrt(howMany));
