@@ -1,10 +1,13 @@
 ﻿@page "/map-circle-list"
 @using Microsoft.AspNetCore.Components
 @using GoogleMapsComponents
+@using GoogleMapsComponents.Maps
+@using GoogleMapsComponents.Maps.Coordinates
+@using GoogleMapsComponents.Maps.Extension
 
 <h1>Google Map Circle List</h1>
 
-<GoogleMap @ref="@_map" Id="map1" Options="@_mapOptions"></GoogleMap>
+<AdvancedGoogleMap @ref="@_map" Id="map1" Options="@_mapOptions"></AdvancedGoogleMap>
 
 <EditForm Model="new object()">
   Bunch size: <InputNumber TValue="int" @bind-Value="_bunchsize" /><br />
