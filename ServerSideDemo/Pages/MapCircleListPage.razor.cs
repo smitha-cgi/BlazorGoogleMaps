@@ -1,4 +1,4 @@
-﻿using GoogleMapsComponents;
+using GoogleMapsComponents;
 using GoogleMapsComponents.Maps;
 using GoogleMapsComponents.Maps.Extension;
 using Microsoft.AspNetCore.Components;
@@ -9,16 +9,41 @@ using System.Threading.Tasks;
 
 namespace ServerSideDemo.Pages;
 
+public class MapMarkerInfo
+{
+    public double Latitude { get; set; }
+
+    public double Longitude { get; set; }
+
+    public string Icon { get; set; }
+
+    public string Text { get; set; }
+
+    public MapMarkerInfo(string text, double latitude, double longitude, string icon)
+    {
+        Latitude = latitude;
+        Longitude = longitude;
+        Icon = icon;
+        Text = text;
+    }
+}
+
 public partial class MapCircleListPage : ComponentBase
 {
-    private GoogleMap _map = null!;
+    private AdvancedGoogleMap _map = null!;
     private MapOptions _mapOptions = null!;
+    private AdvancedMarkerElementList _markerElements;
     private int _bunchsize = 10;
 
+    private List<MapMarkerInfo> _markers = [];
     private CircleList? _circleList;
     private readonly Dictionary<string, CircleOptions> _circleOptionsByRef = new Dictionary<string, CircleOptions>();
     private int _lastId;
     private PolygonList? _createedPolygons;
+
+    public const string Svg = @"<svg xmlns=""http://www.w3.org/2000/svg"" width=""26"" height=""26"" viewBox=""0 0 30 30"">
+        <circle cx=""15"" cy=""15"" r=""10"" stroke=""black"" fill=""green"" stroke-width=""1""/>
+        </svg>";
 
     protected override void OnInitialized()
     {
@@ -30,7 +55,8 @@ public partial class MapCircleListPage : ComponentBase
                 Lat = 48.994249,
                 Lng = 12.190451
             },
-            MapTypeId = MapTypeId.Roadmap
+            MapTypeId = MapTypeId.Roadmap,
+            MapId = "AxNykfeVms3x"
         };
     }
 
@@ -53,7 +79,7 @@ public partial class MapCircleListPage : ComponentBase
             new LatLngLiteral(13.478705686132331, 100.72959683532714),
         };
 
-        _createedPolygons = await PolygonList.CreateAsync(_map.JsRuntime, new Dictionary<string, PolygonOptions>()
+        _createedPolygons = await PolygonList.CreateAsync(_map.MapRef.JsRuntime, new Dictionary<string, PolygonOptions>()
         {
             { Guid.NewGuid().ToString(), new PolygonOptions()
             {
@@ -74,6 +100,8 @@ public partial class MapCircleListPage : ComponentBase
 
     private async void CreateBunchOfCircles()
     {
+        List<AdvancedMarkerElementOptions> circles = [];
+
         int howMany = _bunchsize;
         var bounds = await _map.InteropObject.GetBounds();
         double maxRadius = (bounds.North - bounds.South) * 111111.0 / (10 + Math.Sqrt(howMany));
@@ -81,38 +109,45 @@ public partial class MapCircleListPage : ComponentBase
         var rnd = new Random();
         for (int i = 0; i < howMany; i++)
         {
-            var color = colors[rnd.Next(0, colors.Length)];
-            var circleOptions = new CircleOptions
-            {
-                Map = _map.InteropObject,
-                Center = new LatLngLiteral
-                {
-                    Lat = bounds.South + rnd.NextDouble() * (bounds.North - bounds.South),
-                    Lng = bounds.West + rnd.NextDouble() * (bounds.East - bounds.West)
-                },
-                Radius = (rnd.NextDouble() + 0.2) / 1.2 * maxRadius,
-                StrokeColor = color,
-                StrokeOpacity = 0.60f,
-                StrokeWeight = 2,
-                FillColor = color,
-                FillOpacity = 0.35f,
-                Visible = true,
-                ZIndex = 1000000,
-            };
-            _circleOptionsByRef[(++_lastId).ToString()] = circleOptions;
+            string title = string.Format("Text{0}", i);
+            double lat = bounds.South + rnd.NextDouble() * (bounds.North - bounds.South);
+            double lon = bounds.West + rnd.NextDouble() * (bounds.East - bounds.West);
+
+            var options = new MapMarkerInfo(title, lat, lon, Svg);
+
+            _markers.Add(options);
         }
 
-        await RefreshCircleList();
+        _markerElements = await AdvancedMarkerElementList.CreateAsync(
+            _map.MapRef.JsRuntime,
+            _markers.ToDictionary(_ => Guid.NewGuid().ToString(), y => new AdvancedMarkerElementOptions()
+            {
+                Position = new LatLngLiteral() { Lat = y.Latitude, Lng = y.Longitude },
+                Map = _map.InteropObject,
+                GmpDraggable = false,
+                Title = string.Format("{0}", y.Text),
+                Content = Svg,
+            })
+            );
+
+        await _markerElements.AddListeners<MouseEvent>(_markerElements.Markers.Keys.ToList(), "click", async (o, e) =>
+        {
+            await o.Stop();
+
+            Console.WriteLine("Clicked an object");
+        });
     }
 
     private async Task RefreshCircleList()
     {
-        _circleList = await CircleList.SyncAsync(_circleList, _map.JsRuntime, _circleOptionsByRef, async (_, sKey, _) =>
+        _circleList = await CircleList.SyncAsync(_circleList, _map.MapRef.JsRuntime, _circleOptionsByRef, async (_, sKey, _) =>
         {
             // Circle has been clicked --> delete it.
             _circleOptionsByRef.Remove(sKey);
             await RefreshCircleList();
         });
+
+
     }
 
     private async Task RemoveBunchOfPolygon()
@@ -130,17 +165,18 @@ public partial class MapCircleListPage : ComponentBase
 
     private async Task RemoveBunchOfCircles()
     {
-        if (_circleList != null)
+        if (_markerElements != null)
         {
             Dictionary<string, GoogleMapsComponents.Maps.Map?> maps = [];
-            foreach (var element in _circleList.Circles)
+            foreach (var element in _markerElements.Markers)
             {
                 maps.Add(element.Key, null);
+                await element.Value.ClearListeners("click");
             }
 
-            await _circleList.SetMaps(maps);
+            await _markerElements.SetMaps(maps);
 
-            await _circleList.RemoveAllAsync();
+            await _markerElements.RemoveAllAsync();
         }
     }
 }
